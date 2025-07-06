@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Terminal X</title>
+    <style>
+        /* --- 全体のスタイルとフォント --- */
+        @import url('https://fonts.googleapis.com/css2?family=VT323&family=Inconsolata&display=swap');
+
+        :root {
+            --background-color: #0a0a0a;
+            --text-color: #00ff41;
+            --border-color: #00ff41;
+            --window-bg: #111111;
+            --title-bar-bg: #00ff41;
+            --title-bar-text: #0a0a0a;
+            --disabled-opacity: 0.5;
+        }
+
+        body {
+            background-color: var(--background-color);
+            color: var(--text-color);
+            font-family: 'Inconsolata', monospace;
+            overflow: hidden;
+            margin: 0;
+            padding: 0;
+            cursor: default;
+        }
+
+        /* --- デスクトップと背景 --- */
+        #desktop {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+            background-image: 
+                linear-gradient(rgba(0, 255, 65, 0.1) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 255, 65, 0.1) 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+
+        /* --- ウィンドウのスタイル --- */
+        .window {
+            position: absolute;
+            border: 2px solid var(--border-color);
+            background-color: var(--window-bg);
+            box-shadow: 5px 5px 0px rgba(0, 255, 65, 0.3);
+            display: none; /* 初期状態は非表示 */
+            resize: both;
+            overflow: auto;
+            min-width: 300px;
+            min-height: 150px;
+        }
+
+        .title-bar {
+            background-color: var(--title-bar-bg);
+            color: var(--title-bar-text);
+            padding: 4px 8px;
+            font-weight: bold;
+            cursor: move;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            user-select: none;
+        }
+
+        .title-bar-buttons { display: flex; }
+        .title-bar-button { width: 20px; height: 20px; border: 1px solid var(--title-bar-text); margin-left: 5px; cursor: pointer; text-align: center; line-height: 18px; font-family: 'VT323', monospace; }
+        .title-bar-button:hover { background-color: rgba(0,0,0,0.2); }
+
+        .window-content { padding: 15px; height: calc(100% - 48px); overflow-y: auto; }
+        
+        /* --- フォーム要素のスタイル --- */
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; margin-bottom: 5px; }
+        .form-group input, .form-group textarea { background-color: #222; border: 1px solid var(--border-color); color: var(--text-color); padding: 8px; width: calc(100% - 20px); font-family: inherit; }
+        .form-group input:focus, .form-group textarea:focus { outline: 1px solid var(--text-color); }
+        .btn { background-color: transparent; border: 2px solid var(--border-color); color: var(--text-color); padding: 10px 15px; cursor: pointer; font-family: inherit; text-transform: uppercase; margin-right: 10px; }
+        .btn:hover:not(:disabled) { background-color: var(--border-color); color: var(--title-bar-text); }
+        .btn:disabled { opacity: var(--disabled-opacity); cursor: not-allowed; }
+        
+        /* --- テーブルのスタイル --- */
+        .styled-table { width: 100%; border-collapse: collapse; }
+        .styled-table th, .styled-table td { border: 1px solid var(--border-color); padding: 8px; text-align: left; }
+        .styled-table th { background-color: rgba(0, 255, 65, 0.1); }
+        .styled-table tbody tr.clickable { cursor: pointer; }
+        .styled-table tbody tr.clickable:hover { background-color: rgba(0, 255, 65, 0.2); }
+        .product-thumbnail { width: 40px; height: 40px; object-fit: cover; background-color: #333; border: 1px solid var(--border-color); }
+        .price-input { width: 80px; text-align: right; }
+
+        /* --- 商品詳細のスタイル --- */
+        #itemDetailWindow .detail-layout { display: flex; gap: 20px; }
+        #itemDetailWindow .detail-image-container { flex: 1; text-align: center; }
+        #itemDetailWindow .detail-image { max-width: 150px; border: 2px solid var(--border-color); background-color: #222; padding: 5px; }
+        #itemDetailWindow .detail-info { flex: 2; }
+        .reviews-section { margin-top: 20px; border-top: 1px solid var(--border-color); padding-top: 10px; }
+        .reviews-section h4 { margin-top: 0; }
+        .review { border: 1px dashed rgba(0, 255, 65, 0.5); padding: 8px; margin-top: 8px; word-wrap: break-word; }
+
+        /* --- DMウィンドウのスタイル --- */
+        #messengerWindow .window-content { display: flex; flex-direction: column; height: calc(100% - 48px); }
+        #message-display { flex-grow: 1; border: 1px solid var(--border-color); background-color: #000; padding: 10px; overflow-y: auto; margin-bottom: 15px; }
+        .message-item { margin-bottom: 10px; }
+        .message-item .sender { font-weight: bold; }
+        .message-item .content { padding-left: 10px; }
+        .message-item.sent .sender { color: #00aaff; }
+        .message-item.received .sender { color: #ffaa00; }
+        #message-form { display: flex; flex-direction: column; }
+        
+        /* --- カートと履歴のスタイル --- */
+        .total-row { font-weight: bold; border-top: 2px solid var(--border-color); }
+        #history-log { background-color: #000; border: 1px solid var(--border-color); padding: 10px; white-space: pre; overflow-x: auto; }
+
+
+        /* --- タスクバーとコマンドプロンプト --- */
+        #taskbar { position: fixed; bottom: 35px; left: 0; width: 100%; background-color: var(--window-bg); border-top: 2px solid var(--border-color); padding: 5px; display: flex; z-index: 10000; }
+        .taskbar-item { border: 1px solid var(--border-color); padding: 2px 10px; margin-right: 5px; cursor: pointer; }
+        .taskbar-item.active { background-color: var(--border-color); color: var(--background-color); }
+        #command-prompt-container { position: fixed; bottom: 0; left: 0; width: 100%; background-color: #000; border-top: 2px solid var(--border-color); display: flex; align-items: center; padding: 0 5px; z-index: 10001; }
+        #command-prompt-container span { font-weight: bold; margin-right: 5px; }
+        #command-input { background: transparent; border: none; color: var(--text-color); font-family: inherit; font-size: 1em; width: 100%; padding: 5px; }
+        #command-input:focus { outline: none; }
+
+        /* --- デスクトップアイコン --- */
+        .desktop-icon { position: absolute; width: 100px; text-align: center; padding: 10px; cursor: pointer; transition: opacity 0.3s; }
+        .desktop-icon:hover { background-color: rgba(0, 255, 65, 0.2); border: 1px dashed var(--border-color); }
+        .desktop-icon.disabled { opacity: var(--disabled-opacity); cursor: not-allowed; }
+        .desktop-icon.disabled:hover { background-color: transparent; border: none; }
+        .desktop-icon .icon-placeholder { font-size: 3em; }
+
+    </style>
+</head>
+<body>
+
+    <div id="desktop">
+        <!-- デスクトップアイコン -->
+        <div id="authIcon" class="desktop-icon" style="top: 20px; left: 20px;">
+            <div class="icon-placeholder">🖮</div>
+            <div id="authIconLabel">[LOGIN.SH]</div>
+        </div>
+        <div id="productsIcon" class="desktop-icon" data-window-id="productsWindow" style="top: 150px; left: 20px;">
+            <div class="icon-placeholder">📁</div>
+            <div>[PRODUCTS]</div>
+        </div>
+        <div id="messengerIcon" class="desktop-icon" data-window-id="messengerWindow" style="top: 280px; left: 20px;">
+            <div class="icon-placeholder">✉</div>
+            <div>[MESSENGER]</div>
+        </div>
+        <div id="cartIcon" class="desktop-icon" data-window-id="checkoutWindow" style="top: 20px; left: 140px;">
+            <div class="icon-placeholder">🛒</div>
+            <div>[CART]</div>
+        </div>
+        <div id="historyIcon" class="desktop-icon" data-window-id="historyWindow" style="top: 150px; left: 140px;">
+            <div class="icon-placeholder">🧾</div>
+            <div>[HISTORY]</div>
+        </div>
+        <div class="desktop-icon" data-window-id="helpWindow" style="top: 410px; left: 20px;">
+            <div class="icon-placeholder">?</div>
+            <div>[HELP]</div>
+        </div>
+
+
+        <!-- ログインウィンドウ -->
+        <div id="loginWindow" class="window" style="top: 100px; left: 150px; width: 400px; height: 300px;">
+            <div class="title-bar"> <span>[AUTHENTICATE]</span> <div class="title-bar-buttons"><div class="title-bar-button close-btn">X</div></div> </div>
+            <div class="window-content">
+                <p>// WARNING: SQL INJECTION VULNERABILITY DETECTED</p>
+                <div class="form-group"> <label for="username">Username</label> <input type="text" id="username" name="username"> </div>
+                <div class="form-group"> <label for="password">Password</label> <input type="password" id="password" name="password"> </div>
+                <button id="loginBtn" class="btn">[login.sh]</button> <button id="createUserBtn" class="btn">[create_user.sh]</button>
+            </div>
+        </div>
+
+        <!-- 商品一覧ウィンドウ -->
+        <div id="productsWindow" class="window" style="top: 200px; left: 400px; width: 600px; height: 400px;">
+            <div class="title-bar"> <span>[PRODUCT_CATALOG]</span> <div class="title-bar-buttons"><div class="title-bar-button close-btn">X</div></div> </div>
+            <div class="window-content">
+                <table class="styled-table">
+                    <thead> <tr> <th>IMG</th> <th>ID</th> <th>ITEM_NAME</th> <th>SELLER</th> <th>PRICE (BTC)</th> </tr> </thead>
+                    <tbody id="product-list-body"></tbody>
+                </table>
+            </div>
+        </div>
+        
+        <!-- 商品詳細ウィンドウ -->
+        <div id="itemDetailWindow" class="window" style="top: 150px; left: 250px; width: 650px; height: 500px;">
+            <div class="title-bar"> <span>[ITEM_DETAILS]</span> <div class="title-bar-buttons"><div class="title-bar-button close-btn">X</div></div> </div>
+            <div class="window-content">
+                <div class="detail-layout">
+                    <div class="detail-image-container"> <img id="detail-img" src="" alt="Product Image" class="detail-image" onerror="this.onerror=null; this.src='https://placehold.co/150x150/000000/00ff41?text=NO_IMG';"> </div>
+                    <div class="detail-info">
+                        <div class="form-group"> <label>Item Name</label> <input type="text" id="detail-name" readonly> </div>
+                        <div class="form-group"> <label>Price (BTC)</label> <input type="text" id="detail-price" readonly> </div>
+                        <div class="form-group"> <label>Description</label> <textarea id="detail-desc" rows="4" readonly></textarea> </div>
+                    </div>
+                </div>
+                <div class="reviews-section">
+                    <button id="addToCartBtn" class="btn">[ADD TO CART]</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- DMウィンドウ -->
+        <div id="messengerWindow" class="window" style="top: 120px; left: 300px; width: 500px; height: 450px;">
+            <div class="title-bar"> <span>[SECURE_MESSENGER]</span> <div class="title-bar-buttons"><div class="title-bar-button close-btn">X</div></div> </div>
+            <div class="window-content">
+                <div id="message-display"></div>
+                <form id="message-form">
+                    <div class="form-group"> <label for="recipient">To:</label> <input type="text" id="recipient" placeholder="Recipient username..."> </div>
+                    <div class="form-group"> <label for="message-content">Compose message:</label> <textarea id="message-content" rows="4"></textarea> </div>
+                    <button type="submit" class="btn">[TRANSMIT]</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- 決済ウィンドウ (新規追加) -->
+        <div id="checkoutWindow" class="window" style="top: 100px; left: 350px; width: 550px; height: 400px;">
+            <div class="title-bar"> <span>[TRANSACTION_EXECUTION]</span> <div class="title-bar-buttons"><div class="title-bar-button close-btn">X</div></div> </div>
+            <div class="window-content">
+                <p>// PARAMETER TAMPERING VULNERABILITY DETECTED</p>
+                <table class="styled-table">
+                    <thead> <tr> <th>Item Name</th> <th>Price (BTC)</th> </tr> </thead>
+                    <tbody id="checkout-items"></tbody>
+                    <tfoot> <tr class="total-row"> <td>TOTAL:</td> <td id="checkout-total">0.00</td> </tr> </tfoot>
+                </table>
+                <button id="confirmPurchaseBtn" class="btn" style="margin-top: 20px;">[CONFIRM & TRANSMIT]</button>
+            </div>
+        </div>
+
+        <!-- 購入履歴ウィンドウ (新規追加) -->
+        <div id="historyWindow" class="window" style="top: 150px; left: 450px; width: 600px; height: 400px;">
+            <div class="title-bar"> <span>[ORDER_HISTORY.LOG]</span> <div class="title-bar-buttons"><div class="title-bar-button close-btn">X</div></div> </div>
+            <div class="window-content">
+                <div id="history-log"></div>
+            </div>
+        </div>
+
+        <!-- ヘルプウィンドウ -->
+        <div id="helpWindow" class="window" style="top: 50px; left: 500px; width: 450px; height: 350px;">
+            <div class="title-bar"> <span>[SYSTEM_HELP]</span> <div class="title-bar-buttons"><div class="title-bar-button close-btn">X</div></div> </div>
+            <div class="window-content">
+                <h3>Available Commands:</h3>
+                <ul> <li><b>open [window_id]</b></li> <li><b>close [window_id]</b></li> <li><b>list</b> or <b>ls</b></li> <li><b>clear</b></li> <li><b>help</b></li> <li><b>login</b></li> <li><b>logout</b></li> <li><b>msg</b></li> <li><b>cart</b></li> <li><b>history</b></li> </ul>
+                <hr> <h3>Desktop Icons:</h3> <p>Double-click icons to open their respective programs.</p>
+            </div>
+        </div>
+        
+        <!-- 通知ウィンドウ -->
+        <div id="messageWindow" class="window" style="top: 50%; left: 50%; transform: translate(-50%, -50%); width: 350px; height: 180px;">
+            <div class="title-bar" id="messageTitle"><span>[SYSTEM_MESSAGE]</span></div>
+            <div class="window-content" style="text-align: center;"> <p id="messageText" style="margin-top: 10px;"></p> <button id="messageOkBtn" class="btn" style="margin-top: 20px;">[OK]</button> </div>
+        </div>
+
+    </div>
+
+    <!-- タスクバーとコマンドプロンプト -->
+    <div id="taskbar"></div>
+    <div id="command-prompt-container"> <span>></span> <input type="text" id="command-input" autocomplete="off"> </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- データ定義 ---
+            const products = [
+                { id: 1, name: 'Item_X123', seller: 'Vendor_A5', price: 0.05, image: 'https://placehold.co/64x64/000000/00ff41?text=X123', description: 'A versatile toolkit for network reconnaissance.' },
+                { id: 2, name: 'Cipher_003', seller: 'CipherMaster', price: 5.00, image: 'https://placehold.co/64x64/000000/00ff41?text=C003', description: 'Military-grade encryption/decryption suite.' },
+                { id: 3, name: 'Enigma_Pack', seller: 'ShadowCorp', price: 3.50, image: 'https://placehold.co/64x64/000000/00ff41?text=ENIG', description: 'A pack of social engineering templates.' },
+                { id: 8, name: 'ZeroDay_Exploit', seller: 'GhostSec', price: 50.00, image: 'https://placehold.co/64x64/000000/00ff41?text=0DAY', description: 'Undisclosed exploit for a popular OS.' }
+            ];
+            let users = [ { username: 'user1', password: 'password' }, { username: 'admin', password: 'admin_password' } ];
+            let messages = [ { from: 'admin', to: 'user1', content: 'Welcome to Terminal X. Be careful out there.'} ];
+            let shoppingCart = [];
+            let purchaseHistory = [];
+            let currentUser = null;
+            let currentProductId = null;
+
+            // --- DOM要素の取得 ---
+            const desktop = document.getElementById('desktop');
+            const taskbar = document.getElementById('taskbar');
+            const commandInput = document.getElementById('command-input');
+            const authIcon = document.getElementById('authIcon');
+            const authIconLabel = document.getElementById('authIconLabel');
+            const productsIcon = document.getElementById('productsIcon');
+            const messengerIcon = document.getElementById('messengerIcon');
+            const cartIcon = document.getElementById('cartIcon');
+            const historyIcon = document.getElementById('historyIcon');
+            
+            let highestZIndex = 100;
+            let openWindows = {};
+
+            // --- 通知ウィンドウ関連 ---
+            const messageWindow = document.getElementById('messageWindow');
+            const messageTitle = document.getElementById('messageTitle').querySelector('span');
+            const messageText = document.getElementById('messageText');
+            const messageOkBtn = document.getElementById('messageOkBtn');
+            
+            function showMessage(title, text) {
+                messageTitle.textContent = `[${title}]`;
+                messageText.innerHTML = text;
+                messageWindow.style.display = 'block';
+                highestZIndex++;
+                messageWindow.style.zIndex = highestZIndex;
+            }
+            messageOkBtn.addEventListener('click', () => messageWindow.style.display = 'none');
+
+            // --- 認証関連 ---
+            function login(username, password) {
+                const user = users.find(u => u.username === username && u.password === password);
+                if (user) {
+                    currentUser = user;
+                    updateUIForLoginState();
+                    closeWindow('loginWindow');
+                    showMessage('SUCCESS', `Welcome, ${currentUser.username}.`);
+                } else {
+                    showMessage('AUTH_FAILED', 'Invalid username or password.');
+                }
+            }
+
+            function createUser(username, password) {
+                if (!username || !password) { showMessage('ERROR', 'Username and password cannot be empty.'); return; }
+                if (users.find(u => u.username === username)) { showMessage('ERROR', `User '${username}' already exists.`); } 
+                else {
+                    users.push({ username, password });
+                    showMessage('SUCCESS', `User '${username}' created successfully.`);
+                }
+            }
+
+            function logout() {
+                showMessage('LOGOUT', `User ${currentUser.username} logged out.`);
+                currentUser = null;
+                shoppingCart = [];
+                updateUIForLoginState();
+            }
+
+            function updateUIForLoginState() {
+                const isLoggedIn = !!currentUser;
+                authIconLabel.textContent = isLoggedIn ? '[LOGOUT.SH]' : '[LOGIN.SH]';
+                [productsIcon, messengerIcon, cartIcon, historyIcon].forEach(icon => {
+                    icon.classList.toggle('disabled', !isLoggedIn);
+                });
+
+                if (!isLoggedIn) {
+                    ['productsWindow', 'itemDetailWindow', 'messengerWindow', 'checkoutWindow', 'historyWindow'].forEach(closeWindow);
+                }
+            }
+
+            authIcon.addEventListener('click', () => { currentUser ? logout() : openWindow('loginWindow'); });
+            document.getElementById('loginBtn').addEventListener('click', () => login(document.getElementById('username').value, document.getElementById('password').value));
+            document.getElementById('createUserBtn').addEventListener('click', () => createUser(document.getElementById('username').value, document.getElementById('password').value));
+
+            // --- ウィンドウのインタラクション処理 ---
+            function initializeWindow(windowEl) {
+                const windowId = windowEl.id;
+                const titleBar = windowEl.querySelector('.title-bar');
+                const closeBtn = windowEl.querySelector('.close-btn');
+
+                const activateWindow = () => {
+                    document.querySelectorAll('.taskbar-item.active').forEach(item => item.classList.remove('active'));
+                    highestZIndex++;
+                    windowEl.style.zIndex = highestZIndex;
+                    const taskbarItem = document.querySelector(`.taskbar-item[data-window-id="${windowId}"]`);
+                    if (taskbarItem) taskbarItem.classList.add('active');
+                };
+
+                windowEl.addEventListener('mousedown', activateWindow);
+
+                if (titleBar) {
+                    let isDragging = false, offsetX, offsetY;
+                    titleBar.addEventListener('mousedown', (e) => {
+                        if (e.target.closest('.btn, .title-bar-button')) return;
+                        isDragging = true;
+                        offsetX = e.clientX - windowEl.offsetLeft;
+                        offsetY = e.clientY - windowEl.offsetTop;
+                        desktop.style.cursor = 'move';
+                    });
+                    document.addEventListener('mousemove', (e) => { if (isDragging) { let newX = e.clientX - offsetX; let newY = e.clientY - offsetY; const desktopRect = desktop.getBoundingClientRect(); newX = Math.max(0, Math.min(newX, desktopRect.width - windowEl.offsetWidth)); newY = Math.max(0, Math.min(newY, desktopRect.height - windowEl.offsetHeight - 35)); windowEl.style.left = `${newX}px`; windowEl.style.top = `${newY}px`; } });
+                    document.addEventListener('mouseup', () => { isDragging = false; desktop.style.cursor = 'default'; });
+                }
+
+                if(closeBtn) { closeBtn.addEventListener('click', (e) => { e.stopPropagation(); closeWindow(windowId); }); }
+            }
+
+            // --- ウィンドウを開く/閉じる/トグルする関数 ---
+            function openWindow(windowId) {
+                const windowEl = document.getElementById(windowId);
+                if (!windowEl) { console.error(`Window with id "${windowId}" not found.`); return; }
+                
+                const isProtected = ['productsWindow', 'messengerWindow', 'checkoutWindow', 'historyWindow'].includes(windowId);
+                if (isProtected && !currentUser) {
+                    showMessage('ACCESS_DENIED', 'You must be logged in to use this feature.');
+                    return;
+                }
+
+                windowEl.style.display = 'block';
+                highestZIndex++;
+                windowEl.style.zIndex = highestZIndex;
+
+                if (!openWindows[windowId]) {
+                    const taskbarItem = document.createElement('div');
+                    taskbarItem.className = 'taskbar-item';
+                    taskbarItem.textContent = `[${windowEl.querySelector('.title-bar span').textContent}]`;
+                    taskbarItem.dataset.windowId = windowId;
+                    taskbarItem.addEventListener('click', () => toggleWindow(windowId));
+                    taskbar.appendChild(taskbarItem);
+                    openWindows[windowId] = { element: windowEl, taskbarItem: taskbarItem };
+                }
+                
+                document.querySelectorAll('.taskbar-item.active').forEach(item => item.classList.remove('active'));
+                openWindows[windowId].taskbarItem.classList.add('active');
+
+                // ウィンドウを開く際の固有処理
+                if (windowId === 'messengerWindow') displayMessages();
+                if (windowId === 'checkoutWindow') displayCheckout();
+                if (windowId === 'historyWindow') displayHistory();
+            }
+
+            function closeWindow(windowId) {
+                if (openWindows[windowId]) {
+                    openWindows[windowId].element.style.display = 'none';
+                    openWindows[windowId].taskbarItem.remove();
+                    delete openWindows[windowId];
+                }
+            }
+            
+            function toggleWindow(windowId) {
+                const windowEl = document.getElementById(windowId);
+                if (windowEl.style.display === 'none' || parseInt(windowEl.style.zIndex) < highestZIndex) { openWindow(windowId); } 
+                else {
+                    windowEl.style.display = 'none';
+                    const taskbarItem = document.querySelector(`.taskbar-item[data-window-id="${windowId}"]`);
+                    if (taskbarItem) taskbarItem.classList.remove('active');
+                }
+            }
+
+            // --- 商品、カート、決済、履歴関連 ---
+            function populateProductList() {
+                const tableBody = document.getElementById('product-list-body');
+                tableBody.innerHTML = ''; 
+                products.forEach(product => {
+                    const row = document.createElement('tr');
+                    row.classList.add('clickable');
+                    row.dataset.productId = product.id;
+                    row.innerHTML = `<td><img src="${product.image}" alt="${product.name}" class="product-thumbnail" onerror="this.onerror=null; this.src='https://placehold.co/64x64/000000/00ff41?text=ERR';"></td><td>${product.id}</td><td>${product.name}</td><td>${product.seller}</td><td>${product.price.toFixed(2)}</td>`;
+                    row.addEventListener('click', () => showProductDetails(product.id));
+                    tableBody.appendChild(row);
+                });
+            }
+
+            function showProductDetails(productId) {
+                if (!currentUser) { showMessage('ACCESS_DENIED', 'Please log in to view details.'); return; }
+                const product = products.find(p => p.id === productId);
+                if (!product) return;
+                currentProductId = productId;
+                document.getElementById('detail-img').src = product.image.replace('64x64', '150x150');
+                document.getElementById('detail-name').value = product.name;
+                document.getElementById('detail-price').value = product.price.toFixed(2);
+                document.getElementById('detail-desc').value = product.description;
+                openWindow('itemDetailWindow');
+            }
+
+            document.getElementById('addToCartBtn').addEventListener('click', () => {
+                if (currentProductId !== null) {
+                    const product = products.find(p => p.id === currentProductId);
+                    if (product) {
+                        shoppingCart.push({...product}); // カートにはコピーを追加
+                        showMessage('CART', `Added '${product.name}' to cart.`);
+                    }
+                }
+            });
+            
+            function displayCheckout() {
+                const tbody = document.getElementById('checkout-items');
+                tbody.innerHTML = '';
+                if (shoppingCart.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="2">Shopping cart is empty.</td></tr>';
+                    document.getElementById('confirmPurchaseBtn').disabled = true;
+                    updateCheckoutTotal();
+                    return;
+                }
+                
+                document.getElementById('confirmPurchaseBtn').disabled = false;
+                shoppingCart.forEach((item, index) => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${item.name}</td>
+                        <td><input type="text" class="price-input form-group" data-index="${index}" value="${item.price.toFixed(2)}"></td>
+                    `;
+                    tbody.appendChild(row);
+                });
+                
+                tbody.querySelectorAll('.price-input').forEach(input => {
+                    input.addEventListener('input', updateCheckoutTotal);
+                });
+                updateCheckoutTotal();
+            }
+
+            function updateCheckoutTotal() {
+                let total = 0;
+                document.querySelectorAll('#checkout-items .price-input').forEach(input => {
+                    const price = parseFloat(input.value);
+                    if (!isNaN(price)) {
+                        total += price;
+                    }
+                });
+                document.getElementById('checkout-total').textContent = total.toFixed(2);
+            }
+
+            document.getElementById('confirmPurchaseBtn').addEventListener('click', () => {
+                const purchasedItems = [];
+                let finalTotal = 0;
+                document.querySelectorAll('#checkout-items .price-input').forEach((input, index) => {
+                    const tamperedPrice = parseFloat(input.value);
+                    const originalItem = shoppingCart[index];
+                    purchasedItems.push({ name: originalItem.name, price: tamperedPrice });
+                    finalTotal += tamperedPrice;
+                });
+
+                const transaction = {
+                    date: new Date().getTime(),
+                    user: currentUser.username,
+                    items: purchasedItems,
+                    total: finalTotal
+                };
+                purchaseHistory.push(transaction);
+                
+                showMessage('SUCCESS', `Transaction complete. Total: ${finalTotal.toFixed(2)} BTC. <br>Your assets will be delivered shortly.`);
+                shoppingCart = [];
+                closeWindow('checkoutWindow');
+            });
+
+            function displayHistory() {
+                const log = document.getElementById('history-log');
+                log.innerHTML = '';
+                const userHistory = purchaseHistory.filter(t => t.user === currentUser.username);
+                if (userHistory.length === 0) {
+                    log.textContent = 'No order history found.';
+                    return;
+                }
+                userHistory.forEach(t => {
+                    log.textContent += `ACTION:PURCHASE | DATE:${t.date} | TOTAL:${t.total.toFixed(2)} BTC\n`;
+                    t.items.forEach(item => {
+                        log.textContent += `  - ITEM: ${item.name.padEnd(16, ' ')} | PRICE: ${item.price.toFixed(2)}\n`;
+                    });
+                     log.textContent += '-----------------------------------------------------\n';
+                });
+            }
+
+            // --- DM関連の関数 ---
+            function sendMessage(recipient, content) {
+                if (!recipient || !content) { showMessage('ERROR', 'Recipient and message cannot be empty.'); return; }
+                if (!users.find(u => u.username === recipient)) { showMessage('ERROR', `User '${recipient}' not found.`); return; }
+                messages.push({ from: currentUser.username, to: recipient, content: content });
+                displayMessages();
+                document.getElementById('message-content').value = '';
+            }
+
+            function displayMessages() {
+                const display = document.getElementById('message-display');
+                display.innerHTML = '';
+                const userMessages = messages.filter(m => m.to === currentUser.username || m.from === currentUser.username);
+                userMessages.forEach(msg => {
+                    const item = document.createElement('div');
+                    item.className = 'message-item';
+                    const isSent = msg.from === currentUser.username;
+                    item.classList.add(isSent ? 'sent' : 'received');
+                    const sender = document.createElement('div');
+                    sender.className = 'sender';
+                    sender.textContent = `${isSent ? 'To' : 'From'}: ${isSent ? msg.to : msg.from}`;
+                    const content = document.createElement('div');
+                    content.className = 'content';
+                    content.textContent = `> ${msg.content}`;
+                    item.appendChild(sender);
+                    item.appendChild(content);
+                    display.appendChild(item);
+                });
+                display.scrollTop = display.scrollHeight;
+            }
+            
+            document.getElementById('message-form').addEventListener('submit', (e) => { e.preventDefault(); sendMessage(document.getElementById('recipient').value, document.getElementById('message-content').value); });
+
+            // --- デスクトップアイコンの処理 ---
+            document.querySelectorAll('.desktop-icon').forEach(icon => {
+                if (icon.id === 'authIcon') return;
+                icon.addEventListener('dblclick', () => {
+                    if (icon.classList.contains('disabled')) { showMessage('ACCESS_DENIED', 'You must be logged in to use this feature.'); return; }
+                    const windowId = icon.dataset.windowId;
+                    openWindow(windowId);
+                });
+            });
+
+            // --- コマンドプロンプトの処理 ---
+            commandInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    const [command, ...args] = commandInput.value.trim().toLowerCase().split(' ');
+                    switch (command) {
+                        case 'open': if (args.length > 0) openWindow(args[0]); break;
+                        case 'close': if (args.length > 0) closeWindow(args[0]); break;
+                        case 'help': openWindow('helpWindow'); break;
+                        case 'login': openWindow('loginWindow'); break;
+                        case 'logout': if(currentUser) logout(); break;
+                        case 'msg': openWindow('messengerWindow'); break;
+                        case 'cart': case 'checkout': openWindow('checkoutWindow'); break;
+                        case 'history': openWindow('historyWindow'); break;
+                        case 'ls': case 'list': console.log("Available Windows:", Array.from(document.querySelectorAll('.window')).map(w => w.id).join(', ')); break;
+                        case 'clear': Object.keys(openWindows).forEach(id => closeWindow(id)); break;
+                        default: console.log(`Command not found: ${command}`);
+                    }
+                    commandInput.value = '';
+                }
+            });
+
+            // --- 初期化 ---
+            document.querySelectorAll('.window').forEach(initializeWindow);
+            populateProductList(); 
+            updateUIForLoginState();
+        });
+    </script>
+</body>
+</html>
